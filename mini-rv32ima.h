@@ -3,6 +3,16 @@
 #ifndef _MINI_RV32IMAH_H
 #define _MINI_RV32IMAH_H
 
+#define LOG_INSTRUCTION(pc, ir) \
+    printf("PC: 0x%08x, Instruction: 0x%08x\n", pc, ir)
+
+#ifndef MINIRV32_HANDLE_MEM_STORE_CONTROL
+#define MINIRV32_HANDLE_MEM_STORE_CONTROL(addr, value) \
+    if (addr == 0x10000000 && value == 0xDEADBEEF) { \
+        printf("程序结束信号收到，模拟器退出。\n"); \
+        return -1; \
+    }
+#endif
 /**
     To use mini-rv32ima.h for the bare minimum, the following:
 
@@ -170,6 +180,10 @@ MINIRV32_STEPPROTO
 		else
 		{
 			ir = MINIRV32_LOAD4( ofs_pc );
+
+			// 输出当前 PC 和指令
+            LOG_INSTRUCTION(pc, ir);
+
 			uint32_t rdid = (ir >> 7) & 0x1f;
 
 			switch( ir & 0x7f )
@@ -272,6 +286,7 @@ MINIRV32_STEPPROTO
 						else
 						{
 							trap = (7+1); // Store access fault.
+							printf("Memory Store: Address = 0x%08x, Value = 0x%08x\n", addy, rs2);
 							rval = addy;
 						}
 					}
@@ -484,7 +499,7 @@ MINIRV32_STEPPROTO
 				default: trap = (2+1); // Fault: Invalid opcode.
 			}
 
-			// If there was a trap, do NOT allow register writeback.
+			// 如果发生异常，跳过寄存器写回
 			if( trap ) {
 				SETCSR( pc, pc );
 				MINIRV32_POSTEXEC( pc, ir, trap );

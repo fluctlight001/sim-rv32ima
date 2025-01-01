@@ -74,11 +74,18 @@ int main(int argc, char *argv[]) {
     // 运行处理器
     while (1) {
         int ret = MiniRV32IMAStep(&state, ram, 0, 0, 1);
-        if (ret != 0) break;
+        if (ret != 0) {
+            if (ret == -1) {
+                printf("模拟器正常结束。\n");
+            } else {
+                printf("模拟器异常退出，返回值: %d\n", ret);
+            }
+            break;
+        }
     }
 
     // 输出 a1 寄存器的最终值
     printf("a1 寄存器的最终值: %d\n", state.regs[11]);
-    
+
     return 0;
 }

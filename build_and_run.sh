@@ -2,7 +2,8 @@
 
 # 脚本名称: build_and_run.sh
 # 功能: 编译并运行基于 mini-rv32ima.h 的 RISC-V 模拟器
-# 使用 riscv-none-embed-* 工具链
+# 模拟器使用 gcc 编译，RISC-V 程序使用 riscv-none-embed-* 工具链编译
+# 移除 .comment 部分以确保二进制文件简洁
 
 # 检查是否提供了源文件
 if [ ! -f "mini-rv32ima.h" ]; then
@@ -27,9 +28,15 @@ if ! command -v riscv-none-embed-gcc &> /dev/null; then
     exit 1
 fi
 
+# 检查是否安装了 riscv-none-embed-objdump
+if ! command -v riscv-none-embed-objdump &> /dev/null; then
+    echo "错误: 未找到 riscv-none-embed-objdump 工具！请确保 riscv-none-embed 工具链已安装。"
+    exit 1
+fi
+
 # 编译 RISC-V 程序
 echo "正在编译 RISC-V 程序..."
-riscv-none-embed-gcc -o test.elf test.c
+riscv-none-embed-gcc -march=rv32ima -mabi=ilp32 -nostdlib -T link.ld -o test.elf test.c
 riscv-none-embed-objcopy -O binary test.elf test.bin
 
 # 检查是否编译成功
@@ -39,6 +46,26 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "RISC-V 程序编译成功，生成二进制文件: test.bin"
+
+# 生成反汇编文件
+echo "正在生成反汇编文件..."
+riscv-none-embed-objdump -D test.elf > test.dis
+
+# 检查是否生成成功
+if [ $? -ne 0 ]; then
+    echo "错误: 生成反汇编文件失败！"
+    exit 1
+fi
+
+echo "反汇编文件生成成功，保存为: test.dis"
+
+# 移除 .comment 部分
+echo "正在移除 .comment 部分..."
+riscv-none-embed-objcopy --remove-section=.comment test.elf test_no_comment.elf
+riscv-none-embed-objcopy -O binary test_no_comment.elf test.bin
+riscv-none-embed-objdump -D test_no_comment.elf > test.dis
+
+echo "已移除 .comment 部分，重新生成二进制文件和反汇编文件。"
 
 # 编译模拟器
 echo "正在编译模拟器..."

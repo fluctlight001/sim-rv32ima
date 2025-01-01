@@ -85,7 +85,8 @@ int main(int argc, char *argv[]) {
     }
 
     // 输出 a1 寄存器的最终值
-    printf("a1 寄存器的最终值: %d\n", state.regs[11]);
+    uint32_t a1_value = *(uint32_t *)(ram + 0x80000000 - MINIRV32_RAM_IMAGE_OFFSET);
+    printf("a1 寄存器的最终值: %d\n", a1_value);
 
     return 0;
 }

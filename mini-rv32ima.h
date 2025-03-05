@@ -182,7 +182,7 @@ MINIRV32_STEPPROTO
 			ir = MINIRV32_LOAD4( ofs_pc );
 
 			// 输出当前 PC 和指令
-            LOG_INSTRUCTION(pc, ir);
+            // LOG_INSTRUCTION(pc, ir);
 
 			uint32_t rdid = (ir >> 7) & 0x1f;
 
@@ -499,7 +499,7 @@ MINIRV32_STEPPROTO
 				default: trap = (2+1); // Fault: Invalid opcode.
 			}
 
-			// 如果发生异常，跳过寄存器写回
+			// If there was a trap, do NOT allow register writeback.
 			if( trap ) {
 				SETCSR( pc, pc );
 				MINIRV32_POSTEXEC( pc, ir, trap );
@@ -554,5 +554,3 @@ MINIRV32_STEPPROTO
 #endif
 
 #endif
-
-

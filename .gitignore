@@ -1,3 +1,6 @@
 *.elf
 *.bin
-*.dis
+*.disasm
+*.txt
+*.ans
+*.data

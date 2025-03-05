@@ -1,21 +1,16 @@
 ENTRY(_start)
 
-SECTIONS {
-    . = 0x80000000;  /* 程序加载地址 */
-    .text : { *(.text) }
-    .rodata : { *(.rodata) }
-    .data : { *(.data) }
-    .bss : { *(.bss) }
+SECTIONS
+{
+    . = 0x80000000;
 
-    /* 堆空间 */
-    . = ALIGN(4);
-    _heap_start = .;
-    . = . + 0x10000; /* 64 KB 堆空间 */
-    _heap_end = .;
+    /* 确保 _start 函数位于 .text 段的开头 */
+    .text : {
+        *(.text._start) /* 显式放置 _start 函数 */
+        *(.text*)       /* 其他代码 */
+    }
 
-    /* 栈空间 */
-    . = ALIGN(4);
-    _stack_start = .;
-    . = . + 0x10000; /* 64 KB 栈空间 */
-    _stack_end = .;
+    .rodata : { *(.rodata*) }
+    .data : { *(.data*) }
+    .bss : { *(.bss*) }
 }

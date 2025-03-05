@@ -1,92 +1,109 @@
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
-#include <math.h>
 
-
-#define MINI_RV32_RAM_SIZE (1024 * 1024)  // 1 MB RAM
+#define MINI_RV32_RAM_SIZE 1024 * 1024 // 定义RAM大小为1 MB
 #define MINIRV32_IMPLEMENTATION
+// 函数：将指令执行日志写入日志文件
+void log_instruction(FILE* log_file, uint32_t pc, int write_reg, uint32_t reg_addr, uint32_t reg_value) {
+    fprintf(log_file, "PC: 0x%08X, Write: %d, Reg: %u, Value: 0x%08X\n", pc, write_reg, reg_addr, reg_value);
+}
 
 #include "mini-rv32ima.h"
 
-uint8_t ram[MINI_RV32_RAM_SIZE];
-
-// 从二进制文件加载程序到内存
-int load_program(const char *filename, uint8_t *ram, size_t ram_size) {
-    FILE *file = fopen(filename, "rb");
+// 函数：读取二进制文件到内存中
+uint8_t* read_binary_file(const char* filename, size_t* size) {
+    FILE* file = fopen(filename, "rb"); // 以二进制模式打开文件
     if (!file) {
-        perror("无法打开文件");
-        return -1;
+        perror("Failed to open file"); // 如果文件打开失败，输出错误信息
+        return NULL;
     }
 
-    // 获取文件大小
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    fseek(file, 0, SEEK_END); // 将文件指针移动到文件末尾
+    *size = ftell(file); // 获取文件大小
+    fseek(file, 0, SEEK_SET); // 将文件指针移动回文件开头
 
-    // 检查文件是否超出内存范围
-    if (file_size > ram_size) {
-        fprintf(stderr, "错误: 文件大小超出内存范围！\n");
+    uint8_t* buffer = (uint8_t*)malloc(*size); // 分配内存以存储文件内容
+    if (!buffer) {
+        perror("Failed to allocate memory"); // 如果内存分配失败，输出错误信息
         fclose(file);
-        return -1;
+        return NULL;
     }
 
-    // 读取文件内容到内存
-    size_t read_size = fread(ram, 1, file_size, file);
-    if (read_size != file_size) {
-        perror("读取文件失败");
-        fclose(file);
-        return -1;
-    }
-
-    fclose(file);
-    return 0;
+    fread(buffer, 1, *size, file); // 读取文件内容到缓冲区
+    fclose(file); // 关闭文件
+    return buffer; // 返回缓冲区指针
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "用法: %s <二进制文件>\n", argv[0]);
+
+int main(int argc, char* argv[]) {
+    if (argc != 3) { // 检查命令行参数数量是否正确
+        fprintf(stderr, "Usage: %s <binary_file> <log_file>\n", argv[0]);
         return 1;
     }
 
-    // 从二进制文件加载程序到内存
-    if (load_program(argv[1], ram, MINI_RV32_RAM_SIZE) != 0) {
+    const char* binary_file = argv[1]; // 获取二进制文件名
+    const char* log_file_name = argv[2]; // 获取日志文件名
+
+    // 读取二进制文件
+    size_t binary_size;
+    uint8_t* binary_data = read_binary_file(binary_file, &binary_size);
+    if (!binary_data) {
         return 1;
     }
 
-    // 初始化处理器状态
-    struct MiniRV32IMAState state = {0};
-    state.pc = 0x80000000;  // 设置初始 PC 值
+    // 为RISC-V状态和RAM分配内存
+    struct MiniRV32IMAState state;
+    uint8_t* ram = (uint8_t*)calloc(MINI_RV32_RAM_SIZE, 1); // 分配1 MB的RAM并初始化为0
+    if (!ram) {
+        perror("Failed to allocate RAM"); // 如果RAM分配失败，输出错误信息
+        free(binary_data);
+        return 1;
+    }
 
-    // 加载程序到内存
-    // uint32_t program[] = {
-    //     0x00000593,  // li a1, 0       (addi a1, zero, 0)
-    //     0x06400313,  // li t1, 100     (addi t1, zero, 100)
-    //     0x00000293,  // li t0, 0       (addi t0, zero, 0)
-    //     0x00128293,  // addi t0, t0, 1 (t0 = t0 + 1)
-    //     0x005585b3,  // add a1, a1, t0 (a1 = a1 + t0)
-    //     0xfe62e8e3,  // blt t0, t1, -8 (如果 t0 < t1，跳转到 addi t0, t0, 1)
-    //     0x00000073   // ecall          (结束程序)
-    // };
-    // memcpy(ram, program, sizeof(program));
+    // 初始化RISC-V状态
+    memset(&state, 0, sizeof(state)); // 将状态结构体初始化为0
+    state.pc = MINIRV32_RAM_IMAGE_OFFSET; // 设置程序计数器为RAM的起始地址
+    memcpy(ram, binary_data, binary_size); // 将二进制文件内容加载到RAM中
 
-    // 运行处理器
+    // 打开日志文件
+    FILE* log_file = fopen(log_file_name, "w");
+    if (!log_file) {
+        perror("Failed to open log file"); // 如果日志文件打开失败，输出错误信息
+        free(binary_data);
+        free(ram);
+        return 1;
+    }
+
+    uint32_t old_pc = 0x7fffffff;
+    // 模拟RISC-V程序的执行
     while (1) {
-        int ret = MiniRV32IMAStep(&state, ram, 0, 0, 1);
-        if (ret != 0) {
-            if (ret == -1) {
-                printf("模拟器正常结束。\n");
-            } else {
-                printf("模拟器异常退出，返回值: %d\n", ret);
-            }
-            break;
+        uint32_t pc = state.pc; // 获取当前程序计数器值
+        if (pc == old_pc) break; // 检测到死循环
+        old_pc = pc;
+        int32_t result = MiniRV32IMAStep(&state, ram, 0, 0, 1); // 执行一条指令
+
+        // // 检查是否有寄存器被写入
+        // uint32_t ir = *(uint32_t*)(ram + (pc - MINIRV32_RAM_IMAGE_OFFSET)); // 获取当前指令
+        // uint32_t rdid = (ir >> 7) & 0x1f; // 提取目标寄存器编号
+        // int write_reg = (rdid != 0) ? 1 : 0; // 判断是否写入了寄存器
+        // uint32_t reg_value = (write_reg) ? state.regs[rdid] : 0; // 获取写入的寄存器值
+
+        // 记录指令执行日志
+        // log_instruction(log_file, pc, write_reg, rdid, reg_value);
+
+        
+        if (result != 0) {
+            break; // 如果发生错误或程序结束，停止模拟
         }
     }
 
-    // 输出 a1 寄存器的最终值
-    uint32_t a1_value = *(uint32_t *)(ram + 0x80000000 - MINIRV32_RAM_IMAGE_OFFSET);
-    printf("a1 寄存器的最终值: %d\n", a1_value);
+    // 清理资源
+    fclose(log_file); // 关闭日志文件
+    free(binary_data); // 释放二进制文件数据
+    free(ram); // 释放RAM
 
+    printf("Simulation completed. Log saved to %s\n", log_file_name); // 输出模拟完成信息
     return 0;
 }

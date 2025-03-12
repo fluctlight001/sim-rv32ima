@@ -151,6 +151,7 @@ MINIRV32_STEPPROTO
 	uint32_t trap = 0;
 	uint32_t rval = 0;
 	uint32_t pc = CSR( pc );
+	uint32_t current_pc = pc;
 	uint32_t cycle = CSR( cyclel );
 
 	if( ( CSR( mip ) & (1<<7) ) && ( CSR( mie ) & (1<<7) /*mtie*/ ) && ( CSR( mstatus ) & 0x8 /*mie*/) )
@@ -170,19 +171,24 @@ MINIRV32_STEPPROTO
 		if( ofs_pc >= MINI_RV32_RAM_SIZE )
 		{
 			trap = 1 + 1;  // Handle access violation on instruction read.
+			printf("ofs_pc = %08x, pc = %08x ",ofs_pc,pc);
+			printf("ofs_pc >= MINI_RV32_RAM_SIZE!\n");
 			break;
 		}
 		else if( ofs_pc & 3 )
 		{
 			trap = 1 + 0;  //Handle PC-misaligned access
+			printf("Handle PC-misaligned access\n");
 			break;
 		}
 		else
 		{
 			ir = MINIRV32_LOAD4( ofs_pc );
+			printf("error pc= %08x\n",ofs_pc);
 
 			// 输出当前 PC 和指令
-            // LOG_INSTRUCTION(pc, ir);
+            LOG_INSTRUCTION(pc, ir);
+			printf("fd8 = %08x ffc = %08x\n",MINIRV32_LOAD4(0xfd8),MINIRV32_LOAD4(0x100c));
 
 			uint32_t rdid = (ir >> 7) & 0x1f;
 
@@ -200,6 +206,7 @@ MINIRV32_STEPPROTO
 					if( reladdy & 0x00100000 ) reladdy |= 0xffe00000; // Sign extension.
 					rval = pc + 4;
 					pc = pc + reladdy - 4;
+					printf("207 pc= %08x\n",pc);
 					break;
 				}
 				case 0x67: // JALR (0b1100111)
@@ -208,6 +215,7 @@ MINIRV32_STEPPROTO
 					int32_t imm_se = imm | (( imm & 0x800 )?0xfffff000:0);
 					rval = pc + 4;
 					pc = ( (REG( (ir >> 15) & 0x1f ) + imm_se) & ~1) - 4;
+					printf("215 pc= %08x\n",pc);
 					break;
 				}
 				case 0x63: // Branch (0b1100011)
@@ -229,6 +237,7 @@ MINIRV32_STEPPROTO
 						case 7: if( (uint32_t)rs1 >= (uint32_t)rs2 ) pc = immm4; break;  //BGEU
 						default: trap = (2+1);
 					}
+					printf("236 pc= %08x\n",pc);
 					break;
 				}
 				case 0x03: // Load (0b0000011)
@@ -429,6 +438,7 @@ MINIRV32_STEPPROTO
 							SETCSR( mstatus , (( startmstatus & 0x80) >> 4) | ((startextraflags&3) << 11) | 0x80 );
 							SETCSR( extraflags, (startextraflags & ~3) | ((startmstatus >> 11) & 3) );
 							pc = CSR( mepc ) -4;
+							printf("436 pc= %08x\n",pc);
 						} else {
 							switch (csrno) {
 							case 0:
@@ -505,10 +515,10 @@ MINIRV32_STEPPROTO
 				MINIRV32_POSTEXEC( pc, ir, trap );
 				break;
 			}
-
+			// if (pc == 0x7ffffffc)printf("panic\n");
 			if( rdid )
 			{
-				printf("PC: 0x%08x, Write Reg: x%d, Value: 0x%08x\n", pc, rdid, rval);
+				printf("1 %08x $%d %08x\n", current_pc, rdid, rval);
 				REGSET( rdid, rval ); // Write back register.
 			}
 		}
@@ -516,11 +526,13 @@ MINIRV32_STEPPROTO
 		MINIRV32_POSTEXEC( pc, ir, trap );
 
 		pc += 4;
+		printf("%08x\n",pc);
 	}
 
 	// Handle traps and interrupts.
 	if( trap )
 	{
+		printf("trap = %d, 533 pc= %08x\n",trap,pc);
 		if( trap & 0x80000000 ) // If prefixed with 1 in MSB, it's an interrupt, not a trap.
 		{
 			SETCSR( mcause, trap );
@@ -537,7 +549,7 @@ MINIRV32_STEPPROTO
 		// On an interrupt, the system moves current MIE into MPIE
 		SETCSR( mstatus, (( CSR( mstatus ) & 0x08) << 4) | (( CSR( extraflags ) & 3 ) << 11) );
 		pc = (CSR( mtvec ) - 4);
-
+		printf("545 pc= %08x\n",pc);
 		// If trapping, always enter machine mode.
 		CSR( extraflags ) |= 3;
 
@@ -547,6 +559,7 @@ MINIRV32_STEPPROTO
 
 	if( CSR( cyclel ) > cycle ) CSR( cycleh )++;
 	SETCSR( cyclel, cycle );
+	printf("before setcsr pc= %08x\n",pc);
 	SETCSR( pc, pc );
 	return 0;
 }

@@ -1,5 +1,10 @@
 # sim-rv32ima
 
+### 前置环节
+
+1. 在ysyx-workbench中编译测试
+2. 将测试文件转移到test目录下
+
 ### 使用流程
 
 1. gcc -o riscv_simulator main.c // 编译riscv_simulator

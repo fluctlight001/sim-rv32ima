@@ -49,6 +49,7 @@ int main(int argc, char* argv[]) {
     // 读取二进制文件
     size_t binary_size;
     uint8_t* binary_data = read_binary_file(binary_file, &binary_size);
+    // printf("File size: %zu bytes\n", binary_size); // 输出文件大小
     if (!binary_data) {
         return 1;
     }
@@ -66,23 +67,26 @@ int main(int argc, char* argv[]) {
     memset(&state, 0, sizeof(state)); // 将状态结构体初始化为0
     state.pc = MINIRV32_RAM_IMAGE_OFFSET; // 设置程序计数器为RAM的起始地址
     memcpy(ram, binary_data, binary_size); // 将二进制文件内容加载到RAM中
+    
+    free(binary_data); // 释放二进制文件数据
 
     // 打开日志文件
     FILE* log_file = fopen(log_file_name, "w");
     if (!log_file) {
         perror("Failed to open log file"); // 如果日志文件打开失败，输出错误信息
-        free(binary_data);
         free(ram);
         return 1;
     }
 
+    uint32_t inst_count = 0;
     uint32_t old_pc = 0x7fffffff;
     // 模拟RISC-V程序的执行
     while (1) {
         uint32_t pc = state.pc; // 获取当前程序计数器值
         if (pc == old_pc) break; // 检测到死循环
         old_pc = pc;
-        int32_t result = MiniRV32IMAStep(&state, ram, 0, 0, 1); // 执行一条指令
+        int32_t result = MiniRV32IMAStep(&state, ram, 0, 1, 1); // 执行一条指令
+        inst_count++;
 
         // // 检查是否有寄存器被写入
         // uint32_t ir = *(uint32_t*)(ram + (pc - MINIRV32_RAM_IMAGE_OFFSET)); // 获取当前指令
@@ -101,9 +105,8 @@ int main(int argc, char* argv[]) {
 
     // 清理资源
     fclose(log_file); // 关闭日志文件
-    free(binary_data); // 释放二进制文件数据
     free(ram); // 释放RAM
-
-    printf("Simulation completed. Log saved to %s\n", log_file_name); // 输出模拟完成信息
+    double ipc = (double)inst_count/state.timerl;
+    printf("Simulation completed. \ntimer:%d\ninst_count:%d\nipc:%lf\n", state.timerl,inst_count,ipc); // 输出模拟完成信息
     return 0;
 }

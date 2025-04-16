@@ -3,15 +3,27 @@
 #ifndef _MINI_RV32IMAH_H
 #define _MINI_RV32IMAH_H
 
+#define UART_BASE_ADDR   0x10000000
+#define CLOCK_LOW_ADDR   0xa0000048
+#define CLOCK_HIGH_ADDR  0xa000004c
+
 #define LOG_INSTRUCTION(pc, ir) \
     printf("PC: 0x%08x, Instruction: 0x%08x\n", pc, ir)
 
 #ifndef MINIRV32_HANDLE_MEM_STORE_CONTROL
-#define MINIRV32_HANDLE_MEM_STORE_CONTROL(addr, value) \
-    if (addr == 0x10000000 && value == 0xDEADBEEF) { \
-        printf("程序结束信号收到，模拟器退出。\n"); \
-        return -1; \
-    }
+#define MINIRV32_HANDLE_MEM_STORE_CONTROL(addr, val) \
+	if (addr == UART_BASE_ADDR) { \
+		/* 向串口输出一个字符 */ \
+		putchar(val & 0xFF); \
+		fflush(stdout); \
+	} else if (addr == CLOCK_LOW_ADDR) { \
+		CSR(timerl) = val; \
+	} else if (addr == CLOCK_HIGH_ADDR) { \
+		CSR(timerh) = val; \
+	} else if (addr == 0x10000000 && val == 0xDEADBEEF) { \
+		printf("程序结束信号收到，模拟器退出。\n"); \
+		return -1; \
+	}
 #endif
 /**
     To use mini-rv32ima.h for the bare minimum, the following:
@@ -44,7 +56,9 @@
 #endif
 
 #ifndef MINIRV32_MMIO_RANGE
-	#define MINIRV32_MMIO_RANGE(n)  (0x10000000 <= (n) && (n) < 0x12000000)
+#define MINIRV32_MMIO_RANGE(n)  \
+    ((0x10000000 <= (n) && (n) < 0x12000000) || \
+     (0xa0000000 <= (n) && (n) < 0xa0000100))
 #endif
 
 #ifndef MINIRV32_POSTEXEC
@@ -55,8 +69,17 @@
 	#define MINIRV32_HANDLE_MEM_STORE_CONTROL(...);
 #endif
 
+// 修改MMIO处理部分
 #ifndef MINIRV32_HANDLE_MEM_LOAD_CONTROL
-	#define MINIRV32_HANDLE_MEM_LOAD_CONTROL(...);
+#define MINIRV32_HANDLE_MEM_LOAD_CONTROL(addr, val) \
+    if (addr == UART_BASE_ADDR) { \
+        /* 这里可以实现从串口读取数据 */ \
+        val = 0; /* 默认返回0 */ \
+    } else if (addr == CLOCK_LOW_ADDR) { \
+        val = CSR(timerl); \
+    } else if (addr == CLOCK_HIGH_ADDR) { \
+        val = CSR(timerh); \
+    }
 #endif
 
 #ifndef MINIRV32_OTHERCSR_WRITE
@@ -104,6 +127,9 @@ struct MiniRV32IMAState
 	uint32_t mepc;
 	uint32_t mtval;
 	uint32_t mcause;
+
+	uint32_t ex_is_load;
+	uint32_t ex_waddr;
 
 	// Note: only a few bits are used.  (Machine = 3, User = 0)
 	// Bits 0..1 = privilege.
@@ -184,11 +210,11 @@ MINIRV32_STEPPROTO
 		else
 		{
 			ir = MINIRV32_LOAD4( ofs_pc );
-			printf("error pc= %08x\n",ofs_pc);
+			// printf("error pc= %08x\n",ofs_pc);
 
 			// 输出当前 PC 和指令
-            LOG_INSTRUCTION(pc, ir);
-			printf("fd8 = %08x ffc = %08x\n",MINIRV32_LOAD4(0xfd8),MINIRV32_LOAD4(0x100c));
+            // LOG_INSTRUCTION(pc, ir);
+			// printf("fd8 = %08x ffc = %08x\n",MINIRV32_LOAD4(0xfd8),MINIRV32_LOAD4(0xffc));
 
 			uint32_t rdid = (ir >> 7) & 0x1f;
 
@@ -206,7 +232,10 @@ MINIRV32_STEPPROTO
 					if( reladdy & 0x00100000 ) reladdy |= 0xffe00000; // Sign extension.
 					rval = pc + 4;
 					pc = pc + reladdy - 4;
-					printf("207 pc= %08x\n",pc);
+					// jal timer fix
+					uint32_t new_timer = CSR(timerl) + 2;
+					if(new_timer < CSR(timerl)) CSR(timerh)++;
+					CSR(timerl)=new_timer;
 					break;
 				}
 				case 0x67: // JALR (0b1100111)
@@ -215,7 +244,10 @@ MINIRV32_STEPPROTO
 					int32_t imm_se = imm | (( imm & 0x800 )?0xfffff000:0);
 					rval = pc + 4;
 					pc = ( (REG( (ir >> 15) & 0x1f ) + imm_se) & ~1) - 4;
-					printf("215 pc= %08x\n",pc);
+					// jalr timer fix
+					uint32_t new_timer = CSR(timerl) + 2;
+					if(new_timer < CSR(timerl)) CSR(timerh)++;
+					CSR(timerl)=new_timer;
 					break;
 				}
 				case 0x63: // Branch (0b1100011)
@@ -237,7 +269,13 @@ MINIRV32_STEPPROTO
 						case 7: if( (uint32_t)rs1 >= (uint32_t)rs2 ) pc = immm4; break;  //BGEU
 						default: trap = (2+1);
 					}
-					printf("236 pc= %08x\n",pc);
+					// branch timer fix
+					if (pc == immm4)
+					{
+						uint32_t new_timer = CSR(timerl) + 2;
+						if(new_timer < CSR(timerl)) CSR(timerh)++;
+						CSR(timerl)=new_timer;
+					}
 					break;
 				}
 				case 0x03: // Load (0b0000011)
@@ -246,6 +284,10 @@ MINIRV32_STEPPROTO
 					uint32_t imm = ir >> 20;
 					int32_t imm_se = imm | (( imm & 0x800 )?0xfffff000:0);
 					uint32_t rsval = rs1 + imm_se;
+
+					// load timer fix
+					CSR(ex_is_load) = 1;
+					CSR(ex_waddr) = rdid;
 
 					rsval -= MINIRV32_RAM_IMAGE_OFFSET;
 					if( rsval >= MINI_RV32_RAM_SIZE-3 )
@@ -338,6 +380,10 @@ MINIRV32_STEPPROTO
 							case 6: if( rs2 == 0 ) rval = rs1; else rval = ((int32_t)rs1 == INT32_MIN && (int32_t)rs2 == -1) ? 0 : ((uint32_t)((int32_t)rs1 % (int32_t)rs2)); break; // REM
 							case 7: if( rs2 == 0 ) rval = rs1; else rval = rs1 % rs2; break; // REMU
 						}
+						// mul&div timer fix
+						uint32_t new_timer = CSR(timerl) + 33;
+						if(new_timer < CSR(timerl)) CSR(timerh)++;
+						CSR(timerl)=new_timer;
 					}
 					else
 					{
@@ -360,6 +406,8 @@ MINIRV32_STEPPROTO
 					break;
 				case 0x73: // Zifencei+Zicsr  (0b1110011)
 				{
+					// CSR(ex_is_load) = 1;
+					// CSR(ex_waddr) = rdid; 
 					uint32_t csrno = ir >> 20;
 					uint32_t microop = ( ir >> 12 ) & 0x7;
 					if( (microop & 3) ) // It's a Zicsr function.
@@ -438,7 +486,7 @@ MINIRV32_STEPPROTO
 							SETCSR( mstatus , (( startmstatus & 0x80) >> 4) | ((startextraflags&3) << 11) | 0x80 );
 							SETCSR( extraflags, (startextraflags & ~3) | ((startmstatus >> 11) & 3) );
 							pc = CSR( mepc ) -4;
-							printf("436 pc= %08x\n",pc);
+							// printf("436 pc= %08x\n",pc);
 						} else {
 							switch (csrno) {
 							case 0:
@@ -518,15 +566,21 @@ MINIRV32_STEPPROTO
 			// if (pc == 0x7ffffffc)printf("panic\n");
 			if( rdid )
 			{
-				printf("1 %08x $%d %08x\n", current_pc, rdid, rval);
+				// printf("1 %08x $%d %08x\n", current_pc, rdid, rval);
 				REGSET( rdid, rval ); // Write back register.
 			}
+			if ((CSR(ex_is_load)==0)&&(CSR(ex_waddr!=0))&&(CSR(ex_waddr)==((ir >> 15) & 0x1f)||CSR(ex_waddr)==((ir >> 20) & 0x1f))){
+				uint32_t new_timer = CSR(timerl) + 1;
+				if(new_timer < CSR(timerl)) CSR(timerh)++;
+				CSR(timerl)=new_timer;
+			}
+			CSR(ex_is_load) = 0;
+			CSR(ex_waddr) = 0;
 		}
 
 		MINIRV32_POSTEXEC( pc, ir, trap );
 
 		pc += 4;
-		printf("%08x\n",pc);
 	}
 
 	// Handle traps and interrupts.
@@ -559,7 +613,7 @@ MINIRV32_STEPPROTO
 
 	if( CSR( cyclel ) > cycle ) CSR( cycleh )++;
 	SETCSR( cyclel, cycle );
-	printf("before setcsr pc= %08x\n",pc);
+	// printf("before setcsr pc= %08x\n",pc);
 	SETCSR( pc, pc );
 	return 0;
 }

@@ -1,0 +1,19 @@
+18
+Running CoreMark for 5 iterations
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total time (cycles)  : 3385816
+Iterations       : 5
+Compiler version : GCC14.2.0
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xf24c
+Finised in 3385816 cycles.
+==================================================
+CoreMark PASS 1.476749 Coremark/MHz
+Simulation completed. 
+timer:3449088
+inst_count:1528830
+ipc:0.443256

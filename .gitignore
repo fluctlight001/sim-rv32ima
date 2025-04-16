@@ -4,4 +4,4 @@
 *.txt
 *.ans
 *.data
-!test/add.riscv32-ni.bin
+!coremark-*

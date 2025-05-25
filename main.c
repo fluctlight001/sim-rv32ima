@@ -107,6 +107,6 @@ int main(int argc, char* argv[]) {
     fclose(log_file); // 关闭日志文件
     free(ram); // 释放RAM
     double ipc = (double)inst_count/state.timerl;
-    printf("Simulation completed. \ntimer:%d\ninst_count:%d\nipc:%lf\n", state.timerl,inst_count,ipc); // 输出模拟完成信息
+    // printf("Simulation completed. \ntimer:%d\ninst_count:%d\nipc:%lf\n", state.timerl,inst_count,ipc); // 输出模拟完成信息
     return 0;
 }

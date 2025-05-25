@@ -1,7 +1,0 @@
-*.elf
-*.bin
-*.disasm
-*.txt
-*.ans
-*.data
-!coremark-*
